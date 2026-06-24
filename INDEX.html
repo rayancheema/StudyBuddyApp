@@ -1,0 +1,969 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StudyBuddy AI</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- FontAwesome -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
+    
+    <!-- PDF.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+    </script>
+
+    <!-- PptxGenJS -->
+    <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
+
+    <!-- vis-network -->
+    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+
+    <style>
+        /* Base Theme */
+        body {
+            background-color: #0c0d10;
+            color: #e0e0e0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            overflow: hidden;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1e2025; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #374151; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #4b5563; 
+        }
+
+        /* Gemini Glow Effect */
+        .gemini-glow-container {
+            position: relative;
+            border-radius: 0.75rem;
+            background-color: #1e2025;
+            z-index: 1;
+        }
+        
+        .gemini-glow-container::before {
+            content: '';
+            position: absolute;
+            top: -2px; left: -2px; right: -2px; bottom: -2px;
+            background: linear-gradient(45deg, #6366f1, #a855f7, #6366f1);
+            background-size: 200% 200%;
+            z-index: -1;
+            border-radius: 0.85rem;
+            animation: pulse-glow 3s ease infinite;
+            opacity: 0.8;
+        }
+
+        @keyframes pulse-glow {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        /* Header Animation */
+        .header-text {
+            background: linear-gradient(to right, #6366f1, #a855f7);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: text-pulse 3s ease-in-out infinite alternate;
+        }
+
+        @keyframes text-pulse {
+            0% { filter: brightness(1); }
+            100% { filter: brightness(1.3); }
+        }
+
+        /* Tab Buttons */
+        .tab-btn.active {
+            background-color: #374151;
+            border-left: 4px solid #8b5cf6;
+            color: white;
+        }
+
+        /* Vis Network Canvas */
+        #network-canvas {
+            width: 100%;
+            height: 100%;
+            outline: none;
+        }
+
+        /* Toast Notifications */
+        #toast-container {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 50;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .toast {
+            background: #1f2937;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            border: 1px solid #374151;
+            opacity: 0;
+            transform: translateY(20px);
+            animation: toast-in 0.3s forwards, toast-out 0.3s forwards 2.7s;
+        }
+        @keyframes toast-in {
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes toast-out {
+            to { opacity: 0; transform: translateY(-20px); }
+        }
+        
+        /* Markdown styling for chat */
+        .chat-msg strong { color: #f3f4f6; }
+        .chat-msg p { margin-bottom: 0.5rem; }
+        .chat-msg p:last-child { margin-bottom: 0; }
+        .chat-msg ul { list-style-type: disc; padding-left: 1.5rem; margin-bottom: 0.5rem; }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col">
+
+    <!-- Header -->
+    <header class="h-16 flex items-center justify-between px-6 bg-[#0c0d10] border-b border-gray-800 shrink-0">
+        <div class="flex items-center gap-3">
+            <i class="fa-solid fa-graduation-cap text-2xl text-indigo-500"></i>
+            <h1 class="text-2xl font-bold header-text tracking-wide">StudyBuddy AI</h1>
+        </div>
+        <div class="text-sm text-gray-500 flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+            System Online
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-1 flex flex-row overflow-hidden p-4 gap-4">
+        
+        <!-- LEFT COLUMN: Controls & Files -->
+        <aside class="w-1/4 h-full flex flex-col gap-4 overflow-y-auto pr-2">
+            
+            <!-- API Key Input -->
+            <div class="bg-[#1e2025] rounded-xl p-4 border border-gray-800">
+                <label class="text-xs text-gray-400 font-semibold mb-2 flex items-center justify-between uppercase">
+                    Gemini API Key
+                    <span id="api-status-dot" class="w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_8px_#ef4444]"></span>
+                </label>
+                <div class="relative">
+                    <input type="password" id="api-key-input" placeholder="Enter API Key..." 
+                        class="w-full bg-[#0c0d10] border border-gray-700 text-gray-200 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block p-2.5 outline-none transition">
+                    <button id="toggle-key-visibility" class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-white">
+                        <i class="fa-solid fa-eye text-sm"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Uploader Zone -->
+            <div class="bg-[#1e2025] rounded-xl p-4 border border-gray-800 flex-shrink-0">
+                <label class="text-xs text-gray-400 font-semibold mb-2 block uppercase">Upload Material</label>
+                <div id="dropzone" class="border-2 border-dashed border-gray-600 rounded-xl p-6 text-center cursor-pointer hover:border-indigo-500 hover:bg-[#252830] transition group">
+                    <i class="fa-solid fa-cloud-arrow-up text-3xl text-gray-500 group-hover:text-indigo-400 mb-2 transition"></i>
+                    <p class="text-sm text-gray-300 font-medium">Drop PDF/TXT here</p>
+                    <p class="text-xs text-gray-500 mt-1">or click to browse</p>
+                    <input type="file" id="file-input" class="hidden" accept=".pdf,.txt">
+                </div>
+                <div id="file-status" class="mt-2 text-xs text-indigo-400 hidden flex items-center gap-2">
+                    <i class="fa-solid fa-file-circle-check"></i> <span id="file-name" class="truncate max-w-[180px]"></span> loaded.
+                </div>
+            </div>
+
+            <!-- Context Selector -->
+            <div class="bg-[#1e2025] rounded-xl p-4 border border-gray-800 flex-shrink-0">
+                <label class="text-xs text-gray-400 font-semibold mb-2 block uppercase">Target Context / Chapter</label>
+                <input type="text" id="chapter-input" placeholder="e.g. Chapter 3: Photosynthesis" 
+                    class="w-full bg-[#0c0d10] border border-gray-700 text-gray-200 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block p-2.5 outline-none transition">
+            </div>
+
+            <!-- Tab Switcher -->
+            <div class="bg-[#1e2025] rounded-xl border border-gray-800 flex-1 flex flex-col overflow-hidden">
+                <div class="p-4 border-b border-gray-800 text-xs text-gray-400 font-semibold uppercase">Workspace</div>
+                <div class="flex flex-col p-2 gap-1 overflow-y-auto">
+                    <button class="tab-btn active w-full text-left px-4 py-3 rounded-lg text-sm font-medium text-gray-300 hover:bg-[#2a2d36] transition flex items-center gap-3" data-target="panel-reader">
+                        <i class="fa-solid fa-book-open w-5 text-center"></i> Reader Mode
+                    </button>
+                    <button class="tab-btn w-full text-left px-4 py-3 rounded-lg text-sm font-medium text-gray-300 hover:bg-[#2a2d36] transition flex items-center gap-3" data-target="panel-mindmap">
+                        <i class="fa-solid fa-project-diagram w-5 text-center"></i> Mind Map
+                    </button>
+                    <button class="tab-btn w-full text-left px-4 py-3 rounded-lg text-sm font-medium text-gray-300 hover:bg-[#2a2d36] transition flex items-center gap-3" data-target="panel-ppt">
+                        <i class="fa-solid fa-file-powerpoint w-5 text-center"></i> PPT Generator
+                    </button>
+                    <button class="tab-btn w-full text-left px-4 py-3 rounded-lg text-sm font-medium text-gray-300 hover:bg-[#2a2d36] transition flex items-center gap-3" data-target="panel-quiz">
+                        <i class="fa-solid fa-clipboard-question w-5 text-center"></i> Quiz Mode
+                    </button>
+                </div>
+            </div>
+        </aside>
+
+        <!-- CENTER COLUMN: Core Workspace -->
+        <section class="w-1/2 h-full flex flex-col gemini-glow-container">
+            <div class="w-full h-full bg-[#1e2025] rounded-xl overflow-hidden flex flex-col relative z-10">
+                
+                <!-- Panel: Reader Mode -->
+                <div id="panel-reader" class="workspace-panel w-full h-full flex flex-col">
+                    <div class="p-4 border-b border-gray-800 flex justify-between items-center bg-[#15171c]">
+                        <h2 class="text-sm font-semibold text-gray-200 uppercase tracking-wide"><i class="fa-solid fa-book-open mr-2"></i> Reader View</h2>
+                    </div>
+                    <div class="p-6 flex-1 overflow-y-auto font-serif text-gray-300 leading-relaxed text-lg whitespace-pre-wrap selection:bg-indigo-500/30" id="reader-content">
+                        <div class="flex flex-col items-center justify-center h-full text-gray-500 text-center">
+                            <i class="fa-regular fa-folder-open text-4xl mb-4 opacity-50"></i>
+                            <p>Upload a document to start reading.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Panel: Mind Map -->
+                <div id="panel-mindmap" class="workspace-panel w-full h-full flex flex-col hidden">
+                    <div class="p-4 border-b border-gray-800 flex justify-between items-center bg-[#15171c]">
+                        <h2 class="text-sm font-semibold text-gray-200 uppercase tracking-wide"><i class="fa-solid fa-project-diagram mr-2"></i> Concept Map</h2>
+                        <button id="btn-gen-map" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs px-4 py-2 rounded-lg font-medium transition shadow-lg shadow-indigo-500/20">
+                            <i class="fa-solid fa-wand-magic-sparkles mr-1"></i> Generate
+                        </button>
+                    </div>
+                    <div class="flex-1 relative bg-[#0c0d10]" id="network-container">
+                        <div id="network-empty" class="absolute inset-0 flex flex-col items-center justify-center text-gray-500 z-10">
+                            <i class="fa-solid fa-network-wired text-4xl mb-4 opacity-50"></i>
+                            <p>Generate a visual mind map based on the text context.</p>
+                        </div>
+                        <div id="network-canvas"></div>
+                        <div id="map-loader" class="absolute inset-0 bg-[#0c0d10]/80 backdrop-blur-sm z-20 flex flex-col items-center justify-center hidden">
+                            <div class="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+                            <p class="mt-4 text-indigo-400 font-medium animate-pulse">Synthesizing relationships...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Panel: PPT Generator -->
+                <div id="panel-ppt" class="workspace-panel w-full h-full flex flex-col hidden">
+                    <div class="p-4 border-b border-gray-800 flex justify-between items-center bg-[#15171c]">
+                        <h2 class="text-sm font-semibold text-gray-200 uppercase tracking-wide"><i class="fa-solid fa-file-powerpoint mr-2"></i> Slide Deck</h2>
+                        <button id="btn-gen-ppt" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs px-4 py-2 rounded-lg font-medium transition shadow-lg shadow-indigo-500/20">
+                            <i class="fa-solid fa-wand-magic-sparkles mr-1"></i> Draft Presentation
+                        </button>
+                    </div>
+                    <div class="flex-1 overflow-y-auto p-6 relative">
+                        <div id="ppt-empty" class="flex flex-col items-center justify-center h-full text-gray-500 text-center">
+                            <i class="fa-solid fa-presentation-screen text-4xl mb-4 opacity-50"></i>
+                            <p>Generate a structured slide deck from your text.</p>
+                        </div>
+                        
+                        <!-- PPT Preview Container -->
+                        <div id="ppt-preview" class="hidden flex flex-col gap-6">
+                            <!-- Slides get injected here -->
+                        </div>
+                        
+                        <div id="ppt-loader" class="absolute inset-0 bg-[#1e2025]/90 backdrop-blur-sm z-20 flex flex-col items-center justify-center hidden">
+                            <div class="w-12 h-12 border-4 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
+                            <p class="mt-4 text-purple-400 font-medium animate-pulse">Drafting layouts & content...</p>
+                        </div>
+                    </div>
+                    <!-- Download Bar -->
+                    <div id="ppt-download-bar" class="p-4 border-t border-gray-800 bg-[#15171c] hidden flex justify-end">
+                        <button id="btn-download-ppt" class="bg-green-600 hover:bg-green-500 text-white text-sm px-6 py-2.5 rounded-lg font-medium transition shadow-lg shadow-green-500/20 flex items-center gap-2">
+                            <i class="fa-solid fa-download"></i> Download .PPTX
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Panel: Quiz Mode -->
+                <div id="panel-quiz" class="workspace-panel w-full h-full flex flex-col hidden">
+                    <div class="p-4 border-b border-gray-800 flex justify-between items-center bg-[#15171c]">
+                        <h2 class="text-sm font-semibold text-gray-200 uppercase tracking-wide"><i class="fa-solid fa-clipboard-question mr-2"></i> Knowledge Check</h2>
+                        <button id="btn-gen-quiz" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs px-4 py-2 rounded-lg font-medium transition shadow-lg shadow-indigo-500/20">
+                            <i class="fa-solid fa-wand-magic-sparkles mr-1"></i> Generate Quiz
+                        </button>
+                    </div>
+                    
+                    <div class="flex-1 relative overflow-hidden flex flex-col bg-[#111216]">
+                        <div id="quiz-empty" class="absolute inset-0 flex flex-col items-center justify-center text-gray-500 z-10 p-6 text-center">
+                            <i class="fa-solid fa-spell-check text-4xl mb-4 opacity-50"></i>
+                            <p>Generate a 5-question interactive assessment to test your mastery.</p>
+                        </div>
+                        
+                        <div id="quiz-loader" class="absolute inset-0 bg-[#111216]/90 backdrop-blur-sm z-20 flex flex-col items-center justify-center hidden">
+                            <div class="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+                            <p class="mt-4 text-indigo-400 font-medium animate-pulse">Crafting challenging questions...</p>
+                        </div>
+
+                        <!-- Active Quiz Container -->
+                        <div id="quiz-active" class="hidden flex-1 flex flex-col w-full h-full">
+                            <!-- Progress Bar -->
+                            <div class="h-1.5 w-full bg-gray-800">
+                                <div id="quiz-progress" class="h-full bg-indigo-500 w-0 transition-all duration-300"></div>
+                            </div>
+                            
+                            <div class="flex-1 p-8 overflow-y-auto flex flex-col justify-center max-w-3xl mx-auto w-full">
+                                <span id="quiz-counter" class="text-indigo-400 font-semibold text-sm mb-3">Question 1 of 5</span>
+                                <h3 id="quiz-question" class="text-2xl font-semibold text-white mb-8 leading-snug"></h3>
+                                
+                                <div id="quiz-options" class="flex flex-col gap-3">
+                                    <!-- Options injected here -->
+                                </div>
+                                
+                                <div class="mt-8 flex justify-end">
+                                    <button id="btn-next-q" class="bg-gray-700 hover:bg-gray-600 text-white px-6 py-2.5 rounded-lg font-medium transition hidden">
+                                        Next Question <i class="fa-solid fa-arrow-right ml-2"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Quiz Results Container -->
+                        <div id="quiz-results" class="hidden absolute inset-0 flex flex-col items-center justify-center p-6 bg-[#111216]">
+                            <div class="w-24 h-24 rounded-full bg-indigo-500/20 flex items-center justify-center mb-6">
+                                <i class="fa-solid fa-trophy text-4xl text-indigo-400"></i>
+                            </div>
+                            <h2 class="text-3xl font-bold text-white mb-2">Quiz Complete!</h2>
+                            <p class="text-gray-400 text-lg mb-8">You scored <span id="quiz-score" class="text-white font-bold"></span> out of 5.</p>
+                            <button id="btn-retake-quiz" class="bg-indigo-600 hover:bg-indigo-500 text-white px-8 py-3 rounded-lg font-medium transition shadow-lg shadow-indigo-500/20">
+                                <i class="fa-solid fa-rotate-right mr-2"></i> Generate New Quiz
+                            </button>
+                        </div>
+
+                    </div>
+                </div>
+                
+            </div>
+        </section>
+
+        <!-- RIGHT COLUMN: AI Chatbot -->
+        <aside class="w-1/4 h-full flex flex-col gemini-glow-container">
+            <div class="w-full h-full bg-[#1e2025] rounded-xl flex flex-col relative z-10 overflow-hidden">
+                <!-- Chat Header -->
+                <div class="p-4 border-b border-gray-800 flex items-center gap-3 bg-[#15171c]">
+                    <div class="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center shadow-lg">
+                        <i class="fa-solid fa-robot text-white text-xs"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-sm font-semibold text-gray-200">StudyBuddy Tutor</h3>
+                        <p class="text-xs text-green-400">Context-Aware</p>
+                    </div>
+                </div>
+
+                <!-- Chat Messages -->
+                <div id="chat-messages" class="flex-1 overflow-y-auto p-4 flex flex-col gap-4 bg-[#0c0d10]">
+                    <!-- Welcome msg -->
+                    <div class="flex flex-col items-start max-w-[85%]">
+                        <div class="bg-[#1e2025] border border-gray-800 text-gray-300 p-3 rounded-2xl rounded-tl-sm text-sm chat-msg shadow-sm">
+                            <p>Hi! I'm your AI StudyBuddy. Upload a document, specify a chapter if you'd like, and ask me anything about the material.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Chat Input -->
+                <div class="p-3 border-t border-gray-800 bg-[#15171c]">
+                    <div class="relative flex items-center">
+                        <textarea id="chat-input" rows="1" placeholder="Ask about the text..." 
+                            class="w-full bg-[#0c0d10] border border-gray-700 text-gray-200 text-sm rounded-xl focus:ring-indigo-500 focus:border-indigo-500 block pl-4 pr-12 py-3 outline-none transition resize-none"></textarea>
+                        <button id="btn-send-chat" class="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition">
+                            <i class="fa-solid fa-paper-plane text-xs"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+    </main>
+
+    <div id="toast-container"></div>
+
+    <script>
+        // --- Core Application State ---
+        const AppState = {
+            envApiKey: "", // The system prompt mentions an injected apiKey.
+            fileText: "",
+            fileName: "",
+            chapterContext: "",
+            quizData: [],
+            currentQuizIndex: 0,
+            score: 0,
+            pptData: []
+        };
+
+        // --- DOM Elements ---
+        const DOM = {
+            apiKeyInput: document.getElementById('api-key-input'),
+            apiStatusDot: document.getElementById('api-status-dot'),
+            toggleKeyVis: document.getElementById('toggle-key-visibility'),
+            
+            dropzone: document.getElementById('dropzone'),
+            fileInput: document.getElementById('file-input'),
+            fileStatus: document.getElementById('file-status'),
+            fileName: document.getElementById('file-name'),
+            chapterInput: document.getElementById('chapter-input'),
+            
+            tabBtns: document.querySelectorAll('.tab-btn'),
+            panels: document.querySelectorAll('.workspace-panel'),
+            
+            readerContent: document.getElementById('reader-content'),
+            
+            btnGenMap: document.getElementById('btn-gen-map'),
+            networkEmpty: document.getElementById('network-empty'),
+            networkCanvas: document.getElementById('network-canvas'),
+            mapLoader: document.getElementById('map-loader'),
+            
+            btnGenPpt: document.getElementById('btn-gen-ppt'),
+            pptEmpty: document.getElementById('ppt-empty'),
+            pptPreview: document.getElementById('ppt-preview'),
+            pptLoader: document.getElementById('ppt-loader'),
+            pptDownloadBar: document.getElementById('ppt-download-bar'),
+            btnDownloadPpt: document.getElementById('btn-download-ppt'),
+            
+            btnGenQuiz: document.getElementById('btn-gen-quiz'),
+            quizEmpty: document.getElementById('quiz-empty'),
+            quizLoader: document.getElementById('quiz-loader'),
+            quizActive: document.getElementById('quiz-active'),
+            quizResults: document.getElementById('quiz-results'),
+            quizQuestion: document.getElementById('quiz-question'),
+            quizOptions: document.getElementById('quiz-options'),
+            quizCounter: document.getElementById('quiz-counter'),
+            quizProgress: document.getElementById('quiz-progress'),
+            btnNextQ: document.getElementById('btn-next-q'),
+            quizScore: document.getElementById('quiz-score'),
+            btnRetakeQuiz: document.getElementById('btn-retake-quiz'),
+
+            chatMessages: document.getElementById('chat-messages'),
+            chatInput: document.getElementById('chat-input'),
+            btnSendChat: document.getElementById('btn-send-chat')
+        };
+
+        // --- Utilities ---
+        function showToast(message, type = 'info') {
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.innerHTML = `<i class="fa-solid ${type === 'error' ? 'fa-circle-exclamation text-red-400' : 'fa-circle-check text-green-400'} mr-2"></i> ${message}`;
+            document.getElementById('toast-container').appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+
+        function formatMarkdown(text) {
+            // Very basic markdown parser for chat UI (bold, newlines)
+            return text
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                .replace(/\n/g, '<br/>');
+        }
+
+        // --- API Integration (Gemini) ---
+        function getActiveApiKey() {
+            // Use environment key if provided, fallback to user input
+            const userKey = DOM.apiKeyInput.value.trim();
+            return typeof apiKey !== 'undefined' && apiKey ? apiKey : (AppState.envApiKey || userKey);
+        }
+
+        async function fetchGeminiWithRetry(prompt, systemInstruction, structuredSchema = null, retries = 5) {
+            const key = getActiveApiKey();
+            if (!key) {
+                showToast("Please enter a Gemini API Key.", "error");
+                throw new Error("Missing API Key");
+            }
+
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
+            
+            const payload = {
+                contents: [{ parts: [{ text: prompt }] }],
+                systemInstruction: { parts: [{ text: systemInstruction }] }
+            };
+
+            if (structuredSchema) {
+                payload.generationConfig = {
+                    responseMimeType: "application/json",
+                    responseSchema: structuredSchema
+                };
+            }
+
+            const delays = [1000, 2000, 4000, 8000, 16000];
+
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        const errData = await response.json().catch(()=>({}));
+                        throw new Error(errData.error?.message || `HTTP Error ${response.status}`);
+                    }
+
+                    const data = await response.json();
+                    let textResult = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                    
+                    if(structuredSchema) {
+                        return JSON.parse(textResult);
+                    }
+                    return textResult;
+
+                } catch (error) {
+                    if (i === retries - 1) {
+                        showToast(`API Error: ${error.message}`, "error");
+                        throw error;
+                    }
+                    await new Promise(res => setTimeout(res, delays[i]));
+                }
+            }
+        }
+
+        function getContextString() {
+            let context = `DOCUMENT CONTEXT:\n${AppState.fileText.substring(0, 30000)}`; // limit context size for safety
+            if (AppState.chapterContext) {
+                context += `\n\nFOCUSED CHAPTER: ${AppState.chapterContext}`;
+            }
+            return context;
+        }
+
+        // --- Event Listeners & Setup ---
+
+        // API Key Input UI
+        DOM.apiKeyInput.addEventListener('input', (e) => {
+            if (e.target.value.trim().length > 10) {
+                DOM.apiStatusDot.className = 'w-2.5 h-2.5 rounded-full bg-green-500 shadow-[0_0_8px_#22c55e]';
+            } else {
+                DOM.apiStatusDot.className = 'w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_8px_#ef4444]';
+            }
+        });
+
+        DOM.toggleKeyVis.addEventListener('click', () => {
+            const isPass = DOM.apiKeyInput.type === 'password';
+            DOM.apiKeyInput.type = isPass ? 'text' : 'password';
+            DOM.toggleKeyVis.innerHTML = isPass ? '<i class="fa-solid fa-eye-slash text-sm"></i>' : '<i class="fa-solid fa-eye text-sm"></i>';
+        });
+
+        // Tabs
+        DOM.tabBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                DOM.tabBtns.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                
+                const targetId = btn.getAttribute('data-target');
+                DOM.panels.forEach(p => {
+                    p.classList.add('hidden');
+                    if(p.id === targetId) p.classList.remove('hidden');
+                });
+            });
+        });
+
+        // File Upload Handling
+        DOM.dropzone.addEventListener('click', () => DOM.fileInput.click());
+        DOM.dropzone.addEventListener('dragover', (e) => { e.preventDefault(); DOM.dropzone.classList.add('border-indigo-500'); });
+        DOM.dropzone.addEventListener('dragleave', () => DOM.dropzone.classList.remove('border-indigo-500'));
+        DOM.dropzone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            DOM.dropzone.classList.remove('border-indigo-500');
+            if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+        });
+        DOM.fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length) handleFile(e.target.files[0]);
+        });
+
+        async function handleFile(file) {
+            AppState.fileName = file.name;
+            DOM.fileStatus.classList.remove('hidden');
+            DOM.fileName.textContent = file.name + " (Processing...)";
+            
+            try {
+                if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
+                    AppState.fileText = await extractPdfText(file);
+                } else {
+                    AppState.fileText = await file.text();
+                }
+                
+                DOM.fileName.textContent = file.name;
+                DOM.readerContent.innerHTML = AppState.fileText;
+                showToast("Document loaded successfully!", "success");
+            } catch (error) {
+                showToast("Failed to read document.", "error");
+                DOM.fileStatus.classList.add('hidden');
+            }
+        }
+
+        async function extractPdfText(file) {
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            let fullText = "";
+            for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const content = await page.getTextContent();
+                fullText += content.items.map(item => item.str).join(' ') + "\n";
+            }
+            return fullText;
+        }
+
+        // Chapter Input sync
+        DOM.chapterInput.addEventListener('input', (e) => {
+            AppState.chapterContext = e.target.value.trim();
+        });
+
+
+        // --- Mind Map Logic ---
+        let visNetworkInstance = null;
+        
+        DOM.btnGenMap.addEventListener('click', async () => {
+            if (!AppState.fileText) return showToast("Please upload a document first.", "error");
+            
+            DOM.networkEmpty.classList.add('hidden');
+            DOM.mapLoader.classList.remove('hidden');
+
+            const schema = {
+                type: "OBJECT",
+                properties: {
+                    nodes: {
+                        type: "ARRAY",
+                        items: {
+                            type: "OBJECT",
+                            properties: {
+                                id: { type: "INTEGER" },
+                                label: { type: "STRING" }
+                            }
+                        }
+                    },
+                    edges: {
+                        type: "ARRAY",
+                        items: {
+                            type: "OBJECT",
+                            properties: {
+                                from: { type: "INTEGER" },
+                                to: { type: "INTEGER" }
+                            }
+                        }
+                    }
+                }
+            };
+
+            const prompt = "Generate a structured concept/mind map based on the provided text. Identify major concepts as nodes and relationships as edges. Max 15 nodes.";
+            const systemInst = `You are a data structurer. Return only valid JSON fitting the schema based on this text:\n\n${getContextString()}`;
+
+            try {
+                const data = await fetchGeminiWithRetry(prompt, systemInst, schema);
+                DOM.mapLoader.classList.add('hidden');
+                
+                if (visNetworkInstance) visNetworkInstance.destroy();
+
+                const container = DOM.networkCanvas;
+                const options = {
+                    nodes: {
+                        shape: 'box',
+                        color: { background: '#4f46e5', border: '#3730a3', highlight: { background: '#8b5cf6', border: '#6d28d9' } },
+                        font: { color: '#ffffff', face: 'system-ui' },
+                        margin: 10,
+                        borderWidth: 2,
+                        shadow: true
+                    },
+                    edges: {
+                        color: '#6b7280',
+                        width: 2,
+                        arrows: 'to',
+                        smooth: { type: 'continuous' }
+                    },
+                    physics: {
+                        barnesHut: { gravitationalConstant: -3000, springLength: 150 },
+                        stabilization: { iterations: 150 }
+                    }
+                };
+
+                visNetworkInstance = new vis.Network(container, data, options);
+                showToast("Mind Map Generated!", "success");
+
+            } catch (e) {
+                DOM.mapLoader.classList.add('hidden');
+                DOM.networkEmpty.classList.remove('hidden');
+            }
+        });
+
+
+        // --- PPT Generator Logic ---
+        DOM.btnGenPpt.addEventListener('click', async () => {
+            if (!AppState.fileText) return showToast("Please upload a document first.", "error");
+            
+            DOM.pptEmpty.classList.add('hidden');
+            DOM.pptPreview.classList.add('hidden');
+            DOM.pptDownloadBar.classList.add('hidden');
+            DOM.pptLoader.classList.remove('hidden');
+
+            const schema = {
+                type: "ARRAY",
+                items: {
+                    type: "OBJECT",
+                    properties: {
+                        title: { type: "STRING" },
+                        content: { 
+                            type: "ARRAY", 
+                            items: { type: "STRING" } 
+                        }
+                    }
+                }
+            };
+
+            const prompt = "Summarize the provided content into a professional presentation. Create exactly 5 to 8 slides. Provide a title and 3-4 bullet points per slide.";
+            const systemInst = `You are an executive assistant. Output JSON only. Context:\n\n${getContextString()}`;
+
+            try {
+                AppState.pptData = await fetchGeminiWithRetry(prompt, systemInst, schema);
+                DOM.pptLoader.classList.add('hidden');
+                
+                // Render Preview
+                DOM.pptPreview.innerHTML = '';
+                AppState.pptData.forEach((slide, idx) => {
+                    const slideEl = document.createElement('div');
+                    slideEl.className = 'bg-[#252830] border border-gray-700 rounded-lg p-5 shadow-lg';
+                    let listHtml = slide.content.map(li => `<li class="mb-1">${li}</li>`).join('');
+                    slideEl.innerHTML = `
+                        <div class="text-xs text-gray-500 mb-2 font-bold uppercase tracking-wider">Slide ${idx + 1}</div>
+                        <h3 class="text-xl font-bold text-white mb-3 border-b border-gray-700 pb-2">${slide.title}</h3>
+                        <ul class="list-disc pl-5 text-gray-300 text-sm space-y-1">${listHtml}</ul>
+                    `;
+                    DOM.pptPreview.appendChild(slideEl);
+                });
+
+                DOM.pptPreview.classList.remove('hidden');
+                DOM.pptDownloadBar.classList.remove('hidden');
+                showToast("Draft Slides Ready!", "success");
+
+            } catch (e) {
+                DOM.pptLoader.classList.add('hidden');
+                DOM.pptEmpty.classList.remove('hidden');
+            }
+        });
+
+        DOM.btnDownloadPpt.addEventListener('click', () => {
+            if (!AppState.pptData || AppState.pptData.length === 0) return;
+            
+            try {
+                let pptx = new PptxGenJS();
+                pptx.layout = 'LAYOUT_16x9';
+
+                // Title Slide
+                let masterSlide = pptx.addSlide();
+                masterSlide.background = { color: '0c0d10' };
+                masterSlide.addText(AppState.chapterContext || "StudyBuddy Summary", { 
+                    x: 1, y: '40%', w: '80%', h: 1, 
+                    fontSize: 44, color: 'ffffff', align: 'center', bold: true 
+                });
+                masterSlide.addText("Generated by StudyBuddy AI", { 
+                    x: 1, y: '60%', w: '80%', h: 1, 
+                    fontSize: 18, color: 'a855f7', align: 'center' 
+                });
+
+                // Content Slides
+                AppState.pptData.forEach(slideData => {
+                    let slide = pptx.addSlide();
+                    slide.background = { color: '1e2025' };
+                    
+                    // Header Bar
+                    slide.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: '100%', h: 1.2, fill: { color: '6366f1' } });
+                    
+                    // Title
+                    slide.addText(slideData.title, { 
+                        x: 0.5, y: 0.2, w: '90%', h: 0.8, 
+                        fontSize: 32, color: 'ffffff', bold: true 
+                    });
+                    
+                    // Bullets
+                    let bulletText = slideData.content.map(txt => ({ text: txt, options: { bullet: true } }));
+                    slide.addText(bulletText, { 
+                        x: 0.5, y: 1.5, w: '90%', h: '75%', 
+                        fontSize: 20, color: 'e0e0e0', align: 'left', valign: 'top', bullet: { type: 'bullet' }, lineSpacing: 36
+                    });
+                });
+
+                pptx.writeFile({ fileName: `StudyBuddy_${AppState.chapterContext || 'Summary'}.pptx` });
+                showToast("Downloading Presentation...", "success");
+            } catch(e) {
+                showToast("Error building PPT.", "error");
+                console.error(e);
+            }
+        });
+
+
+        // --- Quiz Generator Logic ---
+        DOM.btnGenQuiz.addEventListener('click', async () => {
+            if (!AppState.fileText) return showToast("Please upload a document first.", "error");
+            
+            DOM.quizEmpty.classList.add('hidden');
+            DOM.quizResults.classList.add('hidden');
+            DOM.quizActive.classList.add('hidden');
+            DOM.quizLoader.classList.remove('hidden');
+
+            const schema = {
+                type: "ARRAY",
+                items: {
+                    type: "OBJECT",
+                    properties: {
+                        question: { type: "STRING" },
+                        options: { type: "ARRAY", items: { type: "STRING" } },
+                        answerIndex: { type: "INTEGER" }
+                    }
+                }
+            };
+
+            const prompt = "Generate a challenging 5-question multiple-choice quiz based on the text. Each question must have exactly 4 options. Return valid JSON.";
+            const systemInst = `You are an academic examiner. Output JSON only. Context:\n\n${getContextString()}`;
+
+            try {
+                AppState.quizData = await fetchGeminiWithRetry(prompt, systemInst, schema);
+                
+                // Ensure exactly 4 options and valid indexes to prevent UI breakage
+                AppState.quizData = AppState.quizData.slice(0, 5).map(q => {
+                    if(!q.options || q.options.length !== 4) q.options = ["Option A", "Option B", "Option C", "Option D"];
+                    if(q.answerIndex < 0 || q.answerIndex > 3) q.answerIndex = 0;
+                    return q;
+                });
+
+                AppState.currentQuizIndex = 0;
+                AppState.score = 0;
+                
+                DOM.quizLoader.classList.add('hidden');
+                DOM.quizActive.classList.remove('hidden');
+                
+                renderQuizQuestion();
+                showToast("Quiz Generated! Good luck.", "success");
+
+            } catch (e) {
+                DOM.quizLoader.classList.add('hidden');
+                DOM.quizEmpty.classList.remove('hidden');
+            }
+        });
+
+        function renderQuizQuestion() {
+            const q = AppState.quizData[AppState.currentQuizIndex];
+            DOM.quizCounter.textContent = `Question ${AppState.currentQuizIndex + 1} of ${AppState.quizData.length}`;
+            DOM.quizProgress.style.width = `${((AppState.currentQuizIndex) / AppState.quizData.length) * 100}%`;
+            DOM.quizQuestion.textContent = q.question;
+            DOM.btnNextQ.classList.add('hidden');
+            
+            DOM.quizOptions.innerHTML = '';
+            q.options.forEach((opt, idx) => {
+                const btn = document.createElement('button');
+                btn.className = 'quiz-option w-full text-left p-4 rounded-xl border border-gray-700 bg-[#1e2025] hover:bg-[#2a2d36] hover:border-indigo-500 transition text-gray-200 text-lg flex items-center justify-between group';
+                btn.innerHTML = `<span>${opt}</span> <i class="fa-solid fa-circle text-gray-600 group-hover:text-indigo-500 transition text-sm"></i>`;
+                
+                btn.onclick = () => handleQuizAnswer(btn, idx, q.answerIndex);
+                DOM.quizOptions.appendChild(btn);
+            });
+        }
+
+        function handleQuizAnswer(selectedBtn, selectedIdx, correctIdx) {
+            // Disable all buttons
+            const btns = DOM.quizOptions.querySelectorAll('.quiz-option');
+            btns.forEach(b => {
+                b.onclick = null;
+                b.classList.remove('hover:bg-[#2a2d36]', 'hover:border-indigo-500', 'cursor-pointer');
+            });
+
+            if (selectedIdx === correctIdx) {
+                AppState.score++;
+                selectedBtn.classList.replace('bg-[#1e2025]', 'bg-green-900/30');
+                selectedBtn.classList.replace('border-gray-700', 'border-green-500');
+                selectedBtn.innerHTML = `<span>${selectedBtn.innerText}</span> <i class="fa-solid fa-circle-check text-green-500 text-xl"></i>`;
+            } else {
+                selectedBtn.classList.replace('bg-[#1e2025]', 'bg-red-900/30');
+                selectedBtn.classList.replace('border-gray-700', 'border-red-500');
+                selectedBtn.innerHTML = `<span>${selectedBtn.innerText}</span> <i class="fa-solid fa-circle-xmark text-red-500 text-xl"></i>`;
+                
+                // Highlight correct
+                const correctBtn = btns[correctIdx];
+                correctBtn.classList.replace('border-gray-700', 'border-green-500');
+                correctBtn.innerHTML = `<span>${correctBtn.innerText}</span> <i class="fa-solid fa-circle-check text-green-500 text-xl"></i>`;
+            }
+
+            DOM.btnNextQ.classList.remove('hidden');
+        }
+
+        DOM.btnNextQ.addEventListener('click', () => {
+            AppState.currentQuizIndex++;
+            if (AppState.currentQuizIndex < AppState.quizData.length) {
+                renderQuizQuestion();
+            } else {
+                finishQuiz();
+            }
+        });
+
+        function finishQuiz() {
+            DOM.quizActive.classList.add('hidden');
+            DOM.quizResults.classList.remove('hidden');
+            DOM.quizProgress.style.width = `100%`;
+            DOM.quizScore.textContent = AppState.score;
+        }
+
+        DOM.btnRetakeQuiz.addEventListener('click', () => {
+            DOM.btnGenQuiz.click(); // Rerun generation
+        });
+
+
+        // --- Chatbot Logic ---
+        function appendMessage(sender, text) {
+            const isUser = sender === 'user';
+            const wrap = document.createElement('div');
+            wrap.className = `flex flex-col items-${isUser ? 'end' : 'start'} max-w-[85%] ${isUser ? 'ml-auto' : ''}`;
+            
+            const bubble = document.createElement('div');
+            bubble.className = `p-3 rounded-2xl text-sm shadow-sm chat-msg ${
+                isUser 
+                ? 'bg-indigo-600 text-white rounded-tr-sm' 
+                : 'bg-[#1e2025] border border-gray-800 text-gray-300 rounded-tl-sm'
+            }`;
+            
+            bubble.innerHTML = isUser ? text : formatMarkdown(text);
+            wrap.appendChild(bubble);
+            DOM.chatMessages.appendChild(wrap);
+            DOM.chatMessages.scrollTop = DOM.chatMessages.scrollHeight;
+        }
+
+        async function handleChat() {
+            const msg = DOM.chatInput.value.trim();
+            if (!msg) return;
+
+            appendMessage('user', msg);
+            DOM.chatInput.value = '';
+            
+            // Add loading bubble
+            const loadingId = 'loading-' + Date.now();
+            const wrap = document.createElement('div');
+            wrap.id = loadingId;
+            wrap.className = `flex flex-col items-start max-w-[85%]`;
+            wrap.innerHTML = `<div class="p-3 rounded-2xl rounded-tl-sm text-sm bg-[#1e2025] border border-gray-800 text-gray-400"><i class="fa-solid fa-ellipsis animate-pulse"></i></div>`;
+            DOM.chatMessages.appendChild(wrap);
+            DOM.chatMessages.scrollTop = DOM.chatMessages.scrollHeight;
+
+            const systemInst = `You are StudyBuddy AI, an expert, encouraging tutor. Answer the user's questions based ONLY on the provided document context. If the answer is not in the text, inform them politely. Context:\n\n${getContextString()}`;
+
+            try {
+                const response = await fetchGeminiWithRetry(msg, systemInst, null, 2);
+                document.getElementById(loadingId).remove();
+                appendMessage('ai', response);
+            } catch (e) {
+                document.getElementById(loadingId).remove();
+                appendMessage('ai', "I encountered an error trying to connect to the network. Please verify your API key and try again.");
+            }
+        }
+
+        DOM.btnSendChat.addEventListener('click', handleChat);
+        DOM.chatInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleChat();
+            }
+        });
+
+    </script>
+</body>
+</html>
